@@ -27,6 +27,8 @@ get.master <- function(){
   features <- get.features()
   master <- merge(train, stores, by='Store')
   master <- merge(master, features, by=c('Store', 'Date'))
-  master <- rename(master, c('Type'='Store.Type', 'Size'='Store.Size'))
+  master$IsHoliday.y <- NULL  # IsHoliday is in features and train
+  master <- rename(master, c('Type'='Store_Type', 'Size'='Store_Size',
+                             'IsHoliday.x'='IsHoliday'))
   return(master)
 }

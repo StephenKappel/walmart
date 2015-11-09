@@ -1,0 +1,15 @@
+---
+title: "Walmart Data Exploration"
+date: "Sunday, November 08, 2015"
+output: html_document
+---
+
+To start, the three separate tables that were provided in the Kaggle competition have been merged together into one table. Here's what the head of that table looks like:
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+source('utility.R')
+master <- get.master()
+head(master)
+```
+
+ToDO...
