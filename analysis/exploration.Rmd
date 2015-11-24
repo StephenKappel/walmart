@@ -7,9 +7,20 @@ output: html_document
 To start, the three separate tables that were provided in the Kaggle competition have been merged together into one table. Here's what the head of that table looks like:
 
 ```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# NOTE: If the following fails with "Error in file...", make sure to set the working director to the 
+# directory where this file is found using `setwd()`
 source('utility.R')
 master <- get.master()
 head(master)
 ```
 
-ToDO...
+### Data exploration and visualization
+
+```{r}
+# trending over time
+sales.by.week <- ddply(master, 'Date', summarize, Sales=sum(Weekly_Sales))
+sales.by.week$Sales_Millions <- sales.by.week$Sales / 10e6
+with(sales.by.week, plot(Date, Sales_Millions, type='l', 
+                         main='Trending of total weekly sales over time', 
+                         ylab='Sales (millions)', xlab='Week'))
+```
