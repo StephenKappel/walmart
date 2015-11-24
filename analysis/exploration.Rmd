@@ -17,10 +17,41 @@ head(master)
 ### Data exploration and visualization
 
 ```{r}
+require(ggplot2)
+
+get.grouped <- function(groups, filter=NULL){
+  if(!is.null(filter)){
+    df <- subset(master, master[,filter[1]] == filter[2])
+  } else{
+    df <- master
+  }
+  grouped <- ddply(df, groups, summarize, Sales=sum(Weekly_Sales))
+  grouped$Sales_Millions <- grouped$Sales / 10e6
+  return(grouped)
+}
+
 # trending over time
-sales.by.week <- ddply(master, 'Date', summarize, Sales=sum(Weekly_Sales))
-sales.by.week$Sales_Millions <- sales.by.week$Sales / 10e6
-with(sales.by.week, plot(Date, Sales_Millions, type='l', 
-                         main='Trending of total weekly sales over time', 
-                         ylab='Sales (millions)', xlab='Week'))
+sales.by.week <- get.grouped(c('Date'))
+labels <- labs(x='Week', y='Sales (millions)')
+ggplot(data=sales.by.week, aes(x=Date, y=Sales_Millions)) + geom_line() + labels
+
+# by store type
+sales.by.type <- get.grouped(c('Store_Type','Date'))
+ggplot(data=sales.by.type, aes(x=Date, y=Sales_Millions, group=Store_Type, color=Store_Type)) + geom_line() + labels
+
+# by store (by type)
+for (store.type in c('A', 'B', 'C')){
+  sales.data <- get.grouped(c('Store', 'Date'), c('Store_Type', store.type))
+  print(ggplot(data=sales.data, aes(x=Date, y=Sales_Millions, group=Store, color=Store)) + geom_line() + labels + labs(title=paste("Type", store.type, 'Store Sales by Store')) + guides(color=FALSE))
+}
 ```
+
+We can see that Type C stores are less impacted by the Holiday season than the other types of stores. We can also clearly see that mmost stores follow a similar seasonal patterns. Also, we see that some stores have Sales trending upward or downward over the span.
+
+**External Factors**
+
+Relationships between temperature, fuel price, and unemployment.
+
+**Correlations between stores**
+
+**Correlations between departments**
