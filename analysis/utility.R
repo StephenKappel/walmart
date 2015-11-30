@@ -30,5 +30,13 @@ get.master <- function(){
   master$IsHoliday.y <- NULL  # IsHoliday is in features and train
   master <- rename(master, c('Type'='Store_Type', 'Size'='Store_Size',
                              'IsHoliday.x'='IsHoliday'))
+  # create a column with normalized weekly sales to allow for more 
+  # meaningful analysis of how external factors impact weekly store sales
+  store.sales <- ddply(master, 'Store', summarize, Mean_Sales=mean(Weekly_Sales), 
+                       SD_Sales=sd(Weekly_Sales))
+  master <- merge(master, store.sales, by=c('Store'))
+  master$Norm_Weekly_Sales <- (master$Weekly_Sales - master$Mean_Sales) / master$SD_Sales
+  master$Mean_Sales <- NULL
+  master$SD_Sales <- NULL
   return(master)
 }

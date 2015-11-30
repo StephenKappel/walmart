@@ -16,7 +16,7 @@ head(master)
 
 ### Data exploration and visualization
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 require(ggplot2)
 
 get.grouped <- function(groups, filter=NULL){
@@ -25,7 +25,7 @@ get.grouped <- function(groups, filter=NULL){
   } else{
     df <- master
   }
-  grouped <- ddply(df, groups, summarize, Sales=sum(Weekly_Sales))
+  grouped <- ddply(df, groups, summarize, Sales=sum(Weekly_Sales), Norm_Sales=sum(Norm_Weekly_Sales))
   grouped$Sales_Millions <- grouped$Sales / 10e6
   return(grouped)
 }
@@ -46,12 +46,33 @@ for (store.type in c('A', 'B', 'C')){
 }
 ```
 
-We can see that Type C stores are less impacted by the Holiday season than the other types of stores. We can also clearly see that mmost stores follow a similar seasonal patterns. Also, we see that some stores have Sales trending upward or downward over the span.
+We can see that Type C stores are less impacted by the Holiday season than the other types of stores. We can also clearly see that most stores follow a similar seasonal patterns. Also, we see that some stores have Sales trending upward or downward over the span.
+
+```{r}
+sales.by.size <- get.grouped(c('Store', 'Store_Type', 'Store_Size'))
+ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions, color=Store_Type)) + 
+  geom_point() + 
+  labs(x='Store Size', y='Sales (millions)', title='Store Sales by Size & Type')
+```
+
+We see a clear relationship between increasing store size and increasing average store sales in this plot. We also see that the three store types are also closely associated with store sizes. Store type A generally equates to larger stores with higher sales volumes. Store type A has the smaller stores with smaller sales volumes. Store type B fits somewhere between A and C.
 
 **External Factors**
 
-Relationships between temperature, fuel price, and unemployment.
+How does unemployment relate to sales?
 
-**Correlations between stores**
+```{r}
+# FIXME: need a better plot here
+sales.by.unemployment <- get.grouped(c('Store', 'Date', 'Unemployment'))
+ggplot(data=sales.by.unemployment, aes(x=Unemployment, y=Norm_Sales, color=Date)) + 
+  geom_point() + 
+  labs(x='Unemployment', y='Normalized Sales', title='Unemployment vs. Sales')
+```
 
-**Correlations between departments**
+Relationships between temperature, fuel price, CPI, and unemployment. Consider normalizing temperature based on store location. Is the affect of temperature different based on the time of year?
+
+TODO: calculate correlation between stores
+TODO: do some of these trends impact some departments more than others
+TODO: build a regression model
+TODO: build a regression tree, random forest model
+TODO: what's the distribution of weekly sales for a given store; is it normal? bimodal? long-tailed?
