@@ -59,15 +59,16 @@ We see a clear relationship between increasing store size and increasing average
 
 **External Factors**
 
-How does unemployment relate to sales?
+How does unemployment relate to sales? It's not clear what we would expect the relationship to be. In general, we would think more unemployment leads to less spending, but Walmart is known for low prices, so poor economic conditions might actually cause more people to shop at Walmart. And, Walmart sells many essential goods (food, clothing, etc.) whose demand may not be highly elastic.
 
 ```{r}
-# FIXME: need a better plot here
-sales.by.unemployment <- get.grouped(c('Store', 'Date', 'Unemployment'))
-ggplot(data=sales.by.unemployment, aes(x=Unemployment, y=Norm_Sales, color=Date)) + 
-  geom_point() + 
-  labs(x='Unemployment', y='Normalized Sales', title='Unemployment vs. Sales')
+ggplot(data=sales.by.unemployment, aes(x=Unemployment, y=Norm_Sales, group=round_any(Unemployment, 1.0))) + 
+  geom_boxplot()
 ```
+
+This plot seems to indicate that there isn't significant correlation between unemployment rate and normalized sales.
+
+TODO: Perhaps we should be looking at normalized unemployment vs. normalized sales
 
 Relationships between temperature, fuel price, CPI, and unemployment. Consider normalizing temperature based on store location. Is the affect of temperature different based on the time of year?
 

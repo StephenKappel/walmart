@@ -30,13 +30,21 @@ get.master <- function(){
   master$IsHoliday.y <- NULL  # IsHoliday is in features and train
   master <- rename(master, c('Type'='Store_Type', 'Size'='Store_Size',
                              'IsHoliday.x'='IsHoliday'))
-  # create a column with normalized weekly sales to allow for more 
-  # meaningful analysis of how external factors impact weekly store sales
-  store.sales <- ddply(master, 'Store', summarize, Mean_Sales=mean(Weekly_Sales), 
-                       SD_Sales=sd(Weekly_Sales))
-  master <- merge(master, store.sales, by=c('Store'))
-  master$Norm_Weekly_Sales <- (master$Weekly_Sales - master$Mean_Sales) / master$SD_Sales
-  master$Mean_Sales <- NULL
-  master$SD_Sales <- NULL
+  master <- add.normalized.col(master, 'Weekly_Sales')
+  master <- add.normalized.col(master, 'Temperature')
+  master <- add.normalized.col(master, 'Unemployment')
+  return(master)
+}
+
+add.normalized.col <- function(master, col.name){
+  master$temp <- master[, col.name]
+  store.ply <- ddply(master, 'Store', summarize, Mean_X=mean(temp), 
+                     SD_X=sd(temp))
+  master <- merge(master, store.ply, by=c('Store'))
+  master$Norm_X <- (master[,col.name] - master$Mean_X) / master$SD_X
+  master$Mean_X <- NULL
+  master$SD_X <- NULL
+  master$temp <- NULL
+  master <- rename(master, c('Norm_X'=paste('Norm_', col.name, sep='')))
   return(master)
 }
