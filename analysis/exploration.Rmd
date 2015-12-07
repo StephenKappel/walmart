@@ -5,8 +5,8 @@ date: "Due: December 5, 2015"
 output: pdf_document
 ---
 
-```{r global_options, include=FALSE}
-knitr::opts_chunk$set(fig.height=4, warning=FALSE, message=FALSE)
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.height=3.5, warning=FALSE, message=FALSE)
 ```
 
 ## Introduction
@@ -21,11 +21,10 @@ In our analysis, sales is the outcome variable of primary interest. We aim to un
 
 1. How do economic factors -- over which Walmart has no control -- affect Walmart's sales? Are some departments and store types impacted more significantly than others by economic factors?
 2. How well can we predict sales? In predicting sales, which predictors are most significant?
-3. Do markdowns have a discernable impact on sales? Do all types of markdowns have comparable effects, or are some more effective than others? 
 
 ## Data Preparation
 
-Kaggle provides the data in the form of three CSVs. To make for easier analysis, we merge the data from the CSVs into a single R data.frame. We call this combined data.frame `master`.
+Kaggle provides the data in the form of three CSVs. We create two data.frames that combine the three source CSVs together. `dept.level` contains one row per department per store per week. `store.level` contains one row per store per week.
 
 ```{r data_prep}
 require(plyr)
@@ -51,7 +50,8 @@ get.train <- function(){
   return(train)
 }
 
-get.master <- function(){
+get.dept.level <- function(){
+  # construct a data.frame with all the data with detail down to the department level
   train <- get.train()
   stores <- get.stores()
   features <- get.features()
@@ -64,15 +64,29 @@ get.master <- function(){
   return(master)
 }
 
-master <- get.master()
+get.store.level <- function(){
+  # construct a data.frame with detail only down to the store level (no departments)
+  train <- get.train()
+  train <- ddply(train, c('Store', 'Date'), summarize, Sales=sum(Weekly_Sales))
+  stores <- get.stores()
+  features <- get.features()
+  merged <- merge(train, stores, by='Store')
+  merged <- merge(merged, features, by=c('Store', 'Date'))
+  merged$Sales_Millions <- merged$Sales / 10e6
+  merged <- rename(merged, c('Type'='Store_Type', 'Size'='Store_Size'))
+  return(merged)
+}
+
+# dept.level <- get.dept.level()
+store.level <- get.store.level()
 ```
 
-As we do our analysis, we often find it helpful to normalize a column within the context of a store. This allows for more meaningful comparisons. Because this is a common operation, we define a function to add a nomalized column to a given data.frame for a specified column/attribute. And, we add a normalized weekly sales column.
+As we do our analysis, we often find it helpful to normalize a column within the context of a store. This allows for more meaningful comparisons. Because this is a common operation, we define a function to add a nomalized column to a given data.frame for a specified column/attribute. To start, we add a normalized sales column to the `store.level` data.frame.
 
 ```{r normalizer}
 add.normalized.col <- function(df, col.name){
   df$temp <- df[, col.name]
-  store.ply <- ddply(df, 'Store', summarize, Mean_X=mean(temp), 
+  store.ply <- ddply(df, c('Store'), summarize, Mean_X=mean(temp), 
                      SD_X=sd(temp))
   df <- merge(df, store.ply, by=c('Store'))
   df$Norm_X <- (df[,col.name] - df$Mean_X) / df$SD_X
@@ -83,12 +97,12 @@ add.normalized.col <- function(df, col.name){
   return(df)
 }
 
-master <- add.normalized.col(master, 'Sales')
+store.level <- add.normalized.col(store.level, 'Sales')
 ```
 
-It's also common for us to want to aggregate sales across some other dimension(s), so we define a function for this operation, too. 
+We also commonly want to get sales aggregates after grouping and/or filtering by some attribute, so we define a function for this operation.
 
-```{r aggregator}
+```{r aggr}
 get.aggr.sales <- function(df, aggr.dims, filter=NULL){
   # df: master data.frame
   # aggr.dims: a list of column names to aggregate on
@@ -99,17 +113,16 @@ get.aggr.sales <- function(df, aggr.dims, filter=NULL){
     sub.df <- df 
   }
   grouped <- ddply(sub.df, aggr.dims, summarize, Sales=sum(Sales), 
-                   Norm_Sales=sum(Norm_Sales), Sales_Millions=sum(Sales_Millions))
+                   Sales_Millions=sum(Sales_Millions))
   return(grouped)
 }
 ```
 
-Using the function we just defined, let's take a look at the normalized distribution of store-level weekly sales. We hope this is roughly normal as it will allow us to apply some statistical tests with more confidence in the coming analysis.
+Let's take a look at the normalized distribution of store-level weekly sales. We hope this is roughly normal as it will allow us to apply some statistical tests with more confidence in the coming analysis.
 
-```{r}
+```{r sales_distribution}
 require(ggplot2)
-weekly.sales.by.store <- get.aggr.sales(master, c('Date', 'Store'))
-ggplot(data=weekly.sales.by.store, aes(x=Norm_Sales)) + geom_histogram(binwidth=0.5)
+ggplot(data=store.level, aes(x=Norm_Sales)) + geom_histogram(binwidth=0.25)
 ```
 
 The distribution appears roughly symmetric and normal, although there is a light long tail on the positive side.
@@ -121,144 +134,134 @@ In this section we explore how economic factors (unemployment, CPI, and fuel pri
 We start by creating a boxplot of sales by unemployment rate.
 
 ```{r boxplot1}
-sales.by.unemployment <- get.aggr.sales(master, c('Store', 'Date', 'Unemployment'))
-ggplot(data=sales.by.unemployment, aes(x=Unemployment, y=Sales_Millions, 
+ggplot(data=store.level, aes(x=Unemployment, y=Sales_Millions, 
   group=round_any(Unemployment, 1.0))) + geom_boxplot()
 ```
 
 This plot don't show much of a relationship, but we haven't done any normalization, so this probably isn't a meaningful representation of the relationship. We normalize sales and unemployment rate by store and create an update boxplot.
 
 ```{r boxplot2}
-master <- add.normalized.col(master, 'Unemployment')
-sales.by.norm.unemployment <- get.aggr.sales(master, c('Store', 'Date', 'Norm_Unemployment'))
-ggplot(data=sales.by.norm.unemployment, aes(x=Norm_Unemployment, y=Norm_Sales, 
+store.level <- add.normalized.col(store.level, 'Unemployment')
+ggplot(data=store.level, aes(x=Norm_Unemployment, y=Norm_Sales, 
   group=round_any(Norm_Unemployment, 0.25))) + geom_boxplot()
 ```
 
-In this most recent plot, there appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales - one histogram for weeks with below average unemployment and on histogram for weeks with above average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is normally distributed and a t-test would be reasonable.
+The same data in a scatter plot with LOESS (blue) and GAM (red) curves overlaid:
+
+```{r scatter}
+ggplot(data=store.level, aes(x=Norm_Unemployment, y=Norm_Sales)) + 
+  geom_point(alpha = 1/5) + geom_smooth(method='loess', color='blue') +
+  geom_smooth(method='gam', color='red')
+```
+
+Within the -1 to 1 normalized unemployment range, a patter seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales - one histogram for weeks with below average unemployment and on histogram for weeks with above average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is normally distributed and a t-test would be reasonable.
 
 ```{r facet_hist}
-sales.by.norm.unemployment$Unemployment_Category <- ifelse(
-  sales.by.norm.unemployment$Norm_Unemployment < 0, 'Below Average', 'Above Average')
-ggplot(data=sales.by.norm.unemployment, aes(x=Norm_Sales)) + geom_histogram(binwidth=4) +
+store.level$Unemployment_Category <- ifelse(
+  store.level$Norm_Unemployment < 0, 'Below Average', 'Above Average')
+ggplot(data=store.level, aes(x=Norm_Sales)) + geom_histogram(binwidth=0.25) +
   facet_wrap(~Unemployment_Category)
 ```
 
-The relationship between unemployment and sales isn't too clear from this plot, but the populations doappear to be roughly normal. We now run an F-test to check if the populations have equal variances (as assumed by a two-sample t-test).
+The relationship between unemployment and sales isn't too clear from this plot, but the populations do appear to be roughly normal. We now run an F-test to check if the populations have equal variances (as assumed by a two-sample t-test).
 
 ```{r f_test}
-above <- subset(sales.by.norm.unemployment, Unemployment_Category == 'Above Average')
-below <- subset(sales.by.norm.unemployment, Unemployment_Category == 'Below Average')
+above <- subset(store.level, Unemployment_Category == 'Above Average')
+below <- subset(store.level, Unemployment_Category == 'Below Average')
 var.test(above$Norm_Sales, below$Norm_Sales)
 ```
 
-We don't reject the null hypothesis that the populations have equal variance, so we proceed with the t-test assuming equal variances. The null hypothesis of the t-test is that the mean normalized sales during weeks with above average unemployment rates is equal to the mean normalized sales during weeks with below average umemployment rates.
-
-```{r t_test}
-t.test(above$Norm_Sales, below$Norm_Sales, var.equal=TRUE)
-```
-
-We can only reject the null hypothesis with significance of 0.30. If we hadn't been able to assume equal variance, and we performed a Welsh two-sample t-test, would the results have been much different?
+We reject the null hypothesis that the populations have equal variance, so we proceed with Welsh t-test for populations with unequal variances. The null hypothesis of this t-test is that the mean normalized sales during weeks with above average unemployment rates is equal to the mean normalized sales during weeks with below average umemployment rates.
 
 ```{r Welsh_test}
 t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
 ```
 
-The results are nearly identical. Now, we drop our assumption of normality, and perform a non-parametric test for the equality of the medians. That is, our null hypothesis is that the median normalized sales during weeks with above average unemployment rates is equal to the median normalized sales during weeks with below average umemployment rates.  
+We can confidently reject the null hypothesis. Now, we drop our assumption of normality, and perform a non-parametric test to see determine if sales for weeks with above-average unemployment are drawn from a different distribution than the sales for weeks with below-average unemployment. We apply the Mann-Whitney-Wilcoxon procedure below.
 
 ```{r wilcox_test}
-wilcox.test(Norm_Sales ~ Unemployment_Category, data=sales.by.norm.unemployment)
+wilcox.test(Norm_Sales ~ Unemployment_Category, data=store.level)
 ```
 
-We repeat the same procedure for CPI and fuel price. The p-values for the various tests performed for each economic factor are summarized in the table below:
+From all the results above, we can conclude that unemployment rate is not independent of Walmart sales.
+
+We repeat the same procedures for CPI and fuel price. We hide the code and output to save space, but we summarize the p-values from the tests  in the table below:
 
 ```{r cpi_fuel, include=FALSE}
 # Note: this should probably be refactored as a function, but this is hidden, so not 
 # worrying about it for now.
 
 # CPI
-master <- add.normalized.col(master, 'CPI')
-sales.by.norm.cpi <- get.aggr.sales(master, c('Store', 'Date', 'Norm_CPI'))
-ggplot(data=sales.by.norm.cpi, aes(x=Norm_CPI, y=Norm_Sales, 
-  group=round_any(Norm_CPI, 0.25))) + geom_boxplot()
-sales.by.norm.cpi$CPI_Category <- ifelse(
-  sales.by.norm.cpi$Norm_CPI < 0, 'Below Average', 'Above Average')
-ggplot(data=sales.by.norm.cpi, aes(x=Norm_Sales)) + geom_histogram(binwidth=4) +
+store.level <- add.normalized.col(store.level, 'CPI')
+store.level$CPI_Category <- ifelse(
+  store.level$Norm_CPI < 0, 'Below Average', 'Above Average')
+ggplot(data=store.level, aes(x=Norm_Sales)) + geom_histogram(binwidth=0.25) +
   facet_wrap(~CPI_Category)
-above <- subset(sales.by.norm.cpi, CPI_Category == 'Above Average')
-below <- subset(sales.by.norm.cpi, CPI_Category == 'Below Average')
+above <- subset(store.level, CPI_Category == 'Above Average')
+below <- subset(store.level, CPI_Category == 'Below Average')
 var.test(above$Norm_Sales, below$Norm_Sales)
 t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
-wilcox.test(Norm_Sales ~ CPI_Category, data=sales.by.norm.cpi)
+wilcox.test(Norm_Sales ~ CPI_Category, data=store.level)
 
-# fuel price
-master <- add.normalized.col(master, 'Fuel_Price')
-sales.by.norm.fuel <- get.aggr.sales(master, c('Store', 'Date', 'Norm_Fuel_Price'))
-ggplot(data=sales.by.norm.fuel, aes(x=Norm_Fuel_Price, y=Norm_Sales, 
-  group=round_any(Norm_Fuel_Price, 0.25))) + geom_boxplot()
-sales.by.norm.fuel$Fuel_Price_Category <- ifelse(
-  sales.by.norm.fuel$Norm_Fuel_Price < 0, 'Below Average', 'Above Average')
-ggplot(data=sales.by.norm.fuel, aes(x=Norm_Sales)) + geom_histogram(binwidth=4) +
-  facet_wrap(~Fuel_Price_Category)
-above <- subset(sales.by.norm.fuel, Fuel_Price_Category == 'Above Average')
-below <- subset(sales.by.norm.fuel, Fuel_Price_Category == 'Below Average')
+# Fuel Price
+store.level <- add.normalized.col(store.level, 'Fuel_Price')
+store.level$Fuel_Category <- ifelse(
+  store.level$Norm_Fuel_Price < 0, 'Below Average', 'Above Average')
+ggplot(data=store.level, aes(x=Norm_Sales)) + geom_histogram(binwidth=0.25) +
+  facet_wrap(~Fuel_Category)
+above <- subset(store.level, Fuel_Category == 'Above Average')
+below <- subset(store.level, Fuel_Category == 'Below Average')
 var.test(above$Norm_Sales, below$Norm_Sales)
 t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
-wilcox.test(Norm_Sales ~ CPI_Category, data=sales.by.norm.cpi)
+wilcox.test(Norm_Sales ~ Fuel_Category, data=store.level)
 ```
 
-Economic Factor | F-test | t-test | Welsh t-test | Mann-Whitney-Wilcoxon test
-----------------|--------|--------|--------------|---------------------------
-Unemployment    | 0.44   | 0.30   | 0.30         | 0.06
-CPI             | 1.02e-7 | NA    | 0.05         | 2.04e-6
+Economic Factor | F-test 95% CI | t-test 95% CI | Mann-Whitney-Wilcoxon p-value
+----------------|---------------|---------------|------------------------------
+Unemployment    | (1.14, 1.31)  | (-0.22, -0.12)| 2.2e-16
+CPI             | (0.83, 0.95)  | (0.11, 0.21)  | 2.2e-16
+Fuel price      | (0.34, 0.39)  | (-0.15, -0.04)| 3.9e-4
 
-
-
-TODO: Are some departments more elastic than others? We might expect the electronics department to be more heavily impacted than the food and clothing departments, for instance. *Perhaps we can use an ANOVA here?
+All three variables tell a similar story. When external economic factors are unfavorable (high unemployment, low CPI, and high fuel prices), Walmart sales are not as strong as they are during times when external economic factors are favorable.
 
 ## Sales predictions
 
+In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, there is roughly a linear relationship between a store's sales and its size.
+
+```{r store_size_scatter}
+sales.by.size <- get.aggr.sales(store.level, c('Store', 'Store_Type', 'Store_Size'))
+ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions, color=Store_Type)) + 
+  geom_point()
+```
+
+We also notice in the plot above that store type is closely related to both store sales and store size. The next couple plots show that dates will also be important in our prediction, as we observe seasonality and trending patters in the timeseries.
+
+```{r trend_plots}
+# plot sales by week
+sales.by.week <- get.aggr.sales(store.level, c('Date'))
+labels <- labs(x='Week', y='Sales (millions)')
+ggplot(data=sales.by.week, aes(x=Date, y=Sales_Millions)) + geom_line() + labels
+# plot sales by week by store type
+sales.by.type <- get.aggr.sales(store.level, c('Store_Type','Date'))
+ggplot(data=sales.by.type, aes(x=Date, y=Sales_Millions, group=Store_Type, color=Store_Type)) + geom_line() + labels
+# by store (by type)
+par(mfrow=c(2,2))
+for (store.type in c('A', 'B', 'C')){
+  sales.data <- get.aggr.sales(store.level, c('Store', 'Date'), c('Store_Type', store.type))
+  print(ggplot(data=sales.data, aes(x=Date, y=Sales_Millions, group=Store, color=Store)) + geom_line() + labels + labs(title=paste("Type", store.type, 'Store Sales by Store')) + guides(color=FALSE))
+}
+```
+
 formula <- Norm_Weekly_Sales ~ Norm_Unemployment + IsHoliday*Store_Type + Store_Size
+
 TODO: incorporate dates into model - month indicators, lag variables, autoregressive varaibles, trend variables
 
-TODO: linear regression model
+TODO: linear regression model; fit a model per store? note that a multi-level model is probably the right answer here, but we probably don't want to go to that level of complexity
 
 TODO: stepwise selection to find most significant predictors
 
 TODO: tree-based models
 
-TODO: fit a spline or LOESS curve
+TODO: KNN
 
-## Impact of markdowns
-
-TODO
-
-## Appendix
-
-As we explored the dataset, we created many plots and computed many intermediate statistics that did not fit directly into our core findings. We share some of this work here.
-
-```{r trend_plots}
-# plot sales by week
-sales.by.week <- get.aggr.sales(master, c('Date'))
-labels <- labs(x='Week', y='Sales (millions)')
-ggplot(data=sales.by.week, aes(x=Date, y=Sales_Millions)) + geom_line() + labels
-# plot sales by week by store type
-sales.by.type <- get.aggr.sales(master, c('Store_Type','Date'))
-ggplot(data=sales.by.type, aes(x=Date, y=Sales_Millions, group=Store_Type, color=Store_Type)) + geom_line() + labels
-# by store (by type)
-for (store.type in c('A', 'B', 'C')){
-  sales.data <- get.aggr.sales(master, c('Store', 'Date'), c('Store_Type', store.type))
-  print(ggplot(data=sales.data, aes(x=Date, y=Sales_Millions, group=Store, color=Store)) + geom_line() + labels + labs(title=paste("Type", store.type, 'Store Sales by Store')) + guides(color=FALSE))
-}
-```
-
-We can see that Type C stores are less impacted by the Holiday season than the other types of stores. We can also clearly see that most stores follow a similar seasonal patterns. Also, we see that some stores have Sales trending upward or downward over the span.
-
-```{r store_size_scatter}
-sales.by.size <- get.aggr.sales(master, c('Store', 'Store_Type', 'Store_Size'))
-ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions, color=Store_Type)) + 
-  geom_point() + 
-  labs(x='Store Size', y='Sales (millions)', title='Store Sales by Size & Type')
-```
-
-We see a clear relationship between increasing store size and increasing average store sales in this plot. We also see that the three store types are also closely associated with store sizes. Store type A generally equates to larger stores with higher sales volumes. Store type A has the smaller stores with smaller sales volumes. Store type B fits somewhere between A and C.
+TODO: compare results from different model types
