@@ -104,6 +104,16 @@ get.aggr.sales <- function(df, aggr.dims, filter=NULL){
 }
 ```
 
+Using the function we just defined, let's take a look at the normalized distribution of store-level weekly sales. We hope this is roughly normal as it will allow us to apply some statistical tests with more confidence in the coming analysis.
+
+```{r}
+require(ggplot2)
+weekly.sales.by.store <- get.aggr.sales(master, c('Date', 'Store'))
+ggplot(data=weekly.sales.by.store, aes(x=Norm_Sales)) + geom_histogram(binwidth=0.5)
+```
+
+The distribution appears roughly symmetric and normal, although there is a light long tail on the positive side.
+
 ## Impact of economic factors
 
 In this section we explore how economic factors (unemployment, CPI, and fuel price) relate to Walmart's sales. It's not immediately obvious how we should expect Walmart's sales to vary with economic conditions. While poor economic conditions hurt most retailers, Walmart is known for low prices. Could bad economic times drive more people to shop at Walmart?
@@ -111,8 +121,7 @@ In this section we explore how economic factors (unemployment, CPI, and fuel pri
 We start by creating a boxplot of sales by unemployment rate.
 
 ```{r boxplot1}
-require(ggplot2)
-sales.by.unemployment <- get.aggr.sales(master, c('Store', 'Unemployment'))
+sales.by.unemployment <- get.aggr.sales(master, c('Store', 'Date', 'Unemployment'))
 ggplot(data=sales.by.unemployment, aes(x=Unemployment, y=Sales_Millions, 
   group=round_any(Unemployment, 1.0))) + geom_boxplot()
 ```
@@ -121,7 +130,7 @@ This plot don't show much of a relationship, but we haven't done any normalizati
 
 ```{r boxplot2}
 master <- add.normalized.col(master, 'Unemployment')
-sales.by.norm.unemployment <- get.aggr.sales(master, c('Store', 'Norm_Unemployment'))
+sales.by.norm.unemployment <- get.aggr.sales(master, c('Store', 'Date', 'Norm_Unemployment'))
 ggplot(data=sales.by.norm.unemployment, aes(x=Norm_Unemployment, y=Norm_Sales, 
   group=round_any(Norm_Unemployment, 0.25))) + geom_boxplot()
 ```
@@ -161,7 +170,49 @@ The results are nearly identical. Now, we drop our assumption of normality, and 
 wilcox.test(Norm_Sales ~ Unemployment_Category, data=sales.by.norm.unemployment)
 ```
 
-TODO: We repeat the same procedure for CPI and fuel price. The results are summarized in the table below:
+We repeat the same procedure for CPI and fuel price. The p-values for the various tests performed for each economic factor are summarized in the table below:
+
+```{r cpi_fuel, include=FALSE}
+# Note: this should probably be refactored as a function, but this is hidden, so not 
+# worrying about it for now.
+
+# CPI
+master <- add.normalized.col(master, 'CPI')
+sales.by.norm.cpi <- get.aggr.sales(master, c('Store', 'Date', 'Norm_CPI'))
+ggplot(data=sales.by.norm.cpi, aes(x=Norm_CPI, y=Norm_Sales, 
+  group=round_any(Norm_CPI, 0.25))) + geom_boxplot()
+sales.by.norm.cpi$CPI_Category <- ifelse(
+  sales.by.norm.cpi$Norm_CPI < 0, 'Below Average', 'Above Average')
+ggplot(data=sales.by.norm.cpi, aes(x=Norm_Sales)) + geom_histogram(binwidth=4) +
+  facet_wrap(~CPI_Category)
+above <- subset(sales.by.norm.cpi, CPI_Category == 'Above Average')
+below <- subset(sales.by.norm.cpi, CPI_Category == 'Below Average')
+var.test(above$Norm_Sales, below$Norm_Sales)
+t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
+wilcox.test(Norm_Sales ~ CPI_Category, data=sales.by.norm.cpi)
+
+# fuel price
+master <- add.normalized.col(master, 'Fuel_Price')
+sales.by.norm.fuel <- get.aggr.sales(master, c('Store', 'Date', 'Norm_Fuel_Price'))
+ggplot(data=sales.by.norm.fuel, aes(x=Norm_Fuel_Price, y=Norm_Sales, 
+  group=round_any(Norm_Fuel_Price, 0.25))) + geom_boxplot()
+sales.by.norm.fuel$Fuel_Price_Category <- ifelse(
+  sales.by.norm.fuel$Norm_Fuel_Price < 0, 'Below Average', 'Above Average')
+ggplot(data=sales.by.norm.fuel, aes(x=Norm_Sales)) + geom_histogram(binwidth=4) +
+  facet_wrap(~Fuel_Price_Category)
+above <- subset(sales.by.norm.fuel, Fuel_Price_Category == 'Above Average')
+below <- subset(sales.by.norm.fuel, Fuel_Price_Category == 'Below Average')
+var.test(above$Norm_Sales, below$Norm_Sales)
+t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
+wilcox.test(Norm_Sales ~ CPI_Category, data=sales.by.norm.cpi)
+```
+
+Economic Factor | F-test | t-test | Welsh t-test | Mann-Whitney-Wilcoxon test
+----------------|--------|--------|--------------|---------------------------
+Unemployment    | 0.44   | 0.30   | 0.30         | 0.06
+CPI             | 1.02e-7 | NA    | 0.05         | 2.04e-6
+
+
 
 TODO: Are some departments more elastic than others? We might expect the electronics department to be more heavily impacted than the food and clothing departments, for instance. *Perhaps we can use an ANOVA here?
 
