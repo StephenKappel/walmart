@@ -6,7 +6,7 @@ output: pdf_document
 ---
 
 ```{r global_options, echo=FALSE}
-knitr::opts_chunk$set(fig.height=3.5, warning=FALSE, message=FALSE)
+knitr::opts_chunk$set(fig.height=3, warning=FALSE, message=FALSE)
 ```
 
 ## Introduction
@@ -19,12 +19,12 @@ For our project, we chose to use sales data provided by Walmart as part of the *
 
 In our analysis, sales is the outcome variable of primary interest. We aim to understand what factors impact sales. In particular, we try to answer:
 
-1. How do economic factors -- over which Walmart has no control -- affect Walmart's sales? Are some departments and store types impacted more significantly than others by economic factors?
+1. How do economic factors -- over which Walmart has no control -- affect Walmart's sales?
 2. How well can we predict sales? In predicting sales, which predictors are most significant?
 
 ## Data Preparation
 
-Kaggle provides the data in the form of three CSVs. We create two data.frames that combine the three source CSVs together. `dept.level` contains one row per department per store per week. `store.level` contains one row per store per week.
+Kaggle provides the data in the form of three CSVs. We a data.frames that combines the three source CSVs together. `store.level` contains one row per store per week. (The original data had an additional "department" level of detail that we have removed.)
 
 ```{r data_prep}
 require(plyr)
@@ -50,20 +50,6 @@ get.train <- function(){
   return(train)
 }
 
-get.dept.level <- function(){
-  # construct a data.frame with all the data with detail down to the department level
-  train <- get.train()
-  stores <- get.stores()
-  features <- get.features()
-  master <- merge(train, stores, by='Store')
-  master <- merge(master, features, by=c('Store', 'Date'))
-  master$IsHoliday.y <- NULL  # IsHoliday is in features and train
-  master$Sales_Millions <- master$Weekly_Sales / 10e6
-  master <- rename(master, c('Type'='Store_Type', 'Size'='Store_Size',
-                             'IsHoliday.x'='IsHoliday', 'Weekly_Sales'='Sales'))
-  return(master)
-}
-
 get.store.level <- function(){
   # construct a data.frame with detail only down to the store level (no departments)
   train <- get.train()
@@ -77,7 +63,6 @@ get.store.level <- function(){
   return(merged)
 }
 
-# dept.level <- get.dept.level()
 store.level <- get.store.level()
 ```
 
@@ -85,6 +70,9 @@ As we do our analysis, we often find it helpful to normalize a column within the
 
 ```{r normalizer}
 add.normalized.col <- function(df, col.name){
+  # df: data.frame (usually store.level) to add normalized column to
+  # col.name: the name of the column in df which should be normalized
+  # the normalized column is named as 'Norm_[col.name]'
   df$temp <- df[, col.name]
   store.ply <- ddply(df, c('Store'), summarize, Mean_X=mean(temp), 
                      SD_X=sd(temp))
@@ -104,7 +92,7 @@ We also commonly want to get sales aggregates after grouping and/or filtering by
 
 ```{r aggr}
 get.aggr.sales <- function(df, aggr.dims, filter=NULL){
-  # df: master data.frame
+  # df: data.frame (usually store.level)
   # aggr.dims: a list of column names to aggregate on
   # filter: NULL or c(column name to filter, value to filter to)
   if(!is.null(filter)){
@@ -226,7 +214,89 @@ All three variables tell a similar story. When external economic factors are unf
 
 ## Sales predictions
 
-In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, there is roughly a linear relationship between a store's sales and its size.
+With the goal of creating a model to predict store-level normalized sales for a given week and store, we build a set of features and then compare the performance of a few different models.
+
+### Features
+
+In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple plots show that dates will also be important in our prediction; we observe seasonality and trending patters in the timeseries.
+
+```{r trend_plots}
+# plot sales by week
+sales.by.week <- get.aggr.sales(store.level, c('Date'))
+ggplot(data=sales.by.week, aes(x=Date, y=Sales_Millions)) + geom_line()
+# plot sales by week by store type
+sales.by.type <- get.aggr.sales(store.level, c('Store_Type','Date'))
+ggplot(data=sales.by.type, aes(x=Date, y=Sales_Millions, group=Store_Type, 
+                               color=Store_Type)) + geom_line()
+# by store for type C
+sales.by.store <- get.aggr.sales(store.level, c('Store', 'Date'), c('Store_Type', 'C'))
+ggplot(data=sales.by.store, aes(x=Date, y=Sales_Millions, group=Store, color=Store)) +
+  geom_line() + guides(color=FALSE)
+```
+
+To capture some of the seasonality and trending nature of the data, we add a month-of-year factor feature and we generate "lag" features that represent what the normalized sales were 1, 2, 52, and 53 weeks ago. We also create a feature that represents the difference in normalized sales between last week and 53 weeks ago.
+
+```{r lag_variables}
+require(lubridate)
+store.level$Month <- as.factor(month(store.level$Date))
+
+add.lag.column <- function(df, weeks){
+  # df: data.frame (usually store.level) to which lag column will be added
+  # weeks: an integer representing the number of weeks ago that a lag column 
+  #        will be created for
+  # The added lag column is named 'Lag_[weeks]_Sales'
+  shifted <- df[, c('Store', 'Date', 'Norm_Sales')]
+  shifted$Date <- shifted$Date + (weeks * 7)
+  shifted <- rename(shifted, c('Norm_Sales'=paste('Lag_', weeks, '_Sales', sep='')))
+  df <- merge(df, shifted, c('Store', 'Date'), all.x = TRUE, all.y = FALSE)
+  return(df)
+}
+
+store.level <- add.lag.column(store.level, 1)
+store.level <- add.lag.column(store.level, 2)
+store.level <- add.lag.column(store.level, 3)
+store.level <- add.lag.column(store.level, 52)
+store.level <- add.lag.column(store.level, 53)
+store.level$Lag_1_53_Diff <- store.level$Lag_1_Sales - store.level$Lag_53_Sales
+```
+
+Some plots of other predictor variables we'll include in our models:
+
+```{r}
+ggplot(data=store.level, aes(x=IsHoliday, y=Norm_Sales)) + geom_boxplot()
+store.level <- add.normalized.col(store.level, 'Temperature')
+ggplot(data=store.level, aes(x=Norm_Temperature, y=Norm_Sales)) + geom_point(alpha=1/5)
+```
+
+### Setup
+
+We limit the testing/training sets to data after February 11, 2011, because we cannot calculate all of our lag features for weeks before then. We then divide all the remain data points randomly into an 80% training set and a 20% test set.
+
+```{r}
+test.train <- subset(store.level, Date >= '2011-02-11')
+set.seed(1234)
+row.count=nrow(test.train)
+train.ind <- sample(1:row.count, size=row.count*0.8)
+train.set <- test.train[train.ind, ]
+test.set <- test.train[-train.ind, ]
+paste(nrow(train.set), 'training records;', nrow(test.set), 'testing records')
+```
+
+TODO: evaluation function
+
+TODO: formula <- Norm_Weekly_Sales ~ Norm_Unemployment + IsHoliday*Store_Type + Store_Size
+
+### Model comparison
+
+TODO: linear, KNN, tree
+
+TODO: stepwise selection to find most significant predictors; show that the training error keeps going down, but test error increases as some critical point
+
+TODO: comparison
+
+## Appendix
+
+Here are some interesting observations that didn't directly fit into the analysis presented in the body of the report.
 
 ```{r store_size_scatter}
 sales.by.size <- get.aggr.sales(store.level, c('Store', 'Store_Type', 'Store_Size'))
@@ -234,34 +304,4 @@ ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions, color=Store_Type)
   geom_point()
 ```
 
-We also notice in the plot above that store type is closely related to both store sales and store size. The next couple plots show that dates will also be important in our prediction, as we observe seasonality and trending patters in the timeseries.
-
-```{r trend_plots}
-# plot sales by week
-sales.by.week <- get.aggr.sales(store.level, c('Date'))
-labels <- labs(x='Week', y='Sales (millions)')
-ggplot(data=sales.by.week, aes(x=Date, y=Sales_Millions)) + geom_line() + labels
-# plot sales by week by store type
-sales.by.type <- get.aggr.sales(store.level, c('Store_Type','Date'))
-ggplot(data=sales.by.type, aes(x=Date, y=Sales_Millions, group=Store_Type, color=Store_Type)) + geom_line() + labels
-# by store (by type)
-par(mfrow=c(2,2))
-for (store.type in c('A', 'B', 'C')){
-  sales.data <- get.aggr.sales(store.level, c('Store', 'Date'), c('Store_Type', store.type))
-  print(ggplot(data=sales.data, aes(x=Date, y=Sales_Millions, group=Store, color=Store)) + geom_line() + labels + labs(title=paste("Type", store.type, 'Store Sales by Store')) + guides(color=FALSE))
-}
-```
-
-formula <- Norm_Weekly_Sales ~ Norm_Unemployment + IsHoliday*Store_Type + Store_Size
-
-TODO: incorporate dates into model - month indicators, lag variables, autoregressive varaibles, trend variables
-
-TODO: linear regression model; fit a model per store? note that a multi-level model is probably the right answer here, but we probably don't want to go to that level of complexity
-
-TODO: stepwise selection to find most significant predictors
-
-TODO: tree-based models
-
-TODO: KNN
-
-TODO: compare results from different model types
+There is roughly a linear relationship between a store's sales and its size. We also notice in the plot above that store type is closely related to both store sales and store size.
