@@ -255,6 +255,8 @@ add.lag.column <- function(df, weeks){
 store.level <- add.lag.column(store.level, 1)
 store.level <- add.lag.column(store.level, 2)
 store.level <- add.lag.column(store.level, 3)
+store.level <- add.lag.column(store.level, 4)
+store.level <- add.lag.column(store.level, 51)
 store.level <- add.lag.column(store.level, 52)
 store.level <- add.lag.column(store.level, 53)
 store.level$Lag_1_53_Diff <- store.level$Lag_1_Sales - store.level$Lag_53_Sales
@@ -272,9 +274,9 @@ ggplot(data=store.level, aes(x=Norm_Temperature, y=Norm_Sales)) + geom_point(alp
 
 We limit the testing/training sets to data after February 11, 2011, because we cannot calculate all of our lag features for weeks before then. We then divide all the remain data points randomly into an 80% training set and a 20% test set.
 
-```{r}
+```{r test_train}
 test.train <- subset(store.level, Date >= '2011-02-11')
-set.seed(1234)
+set.seed(123)
 row.count=nrow(test.train)
 train.ind <- sample(1:row.count, size=row.count*0.8)
 train.set <- test.train[train.ind, ]
@@ -282,15 +284,57 @@ test.set <- test.train[-train.ind, ]
 paste(nrow(train.set), 'training records;', nrow(test.set), 'testing records')
 ```
 
-TODO: evaluation function
+To allow us to make good comparisons between models, we use a consistent set of predictors for all the models we fit in the following section. We include:
 
-TODO: formula <- Norm_Weekly_Sales ~ Norm_Unemployment + IsHoliday*Store_Type + Store_Size
+* Normalized external economic factors (unemployment rate, CPI, and fuel price)
+* A holiday indicator variable with a Store_Type interaction (because we saw that store type C was less impacted by the holiday season than were the other store types)
+* Normalized temperature
+* Month-of-year and lag features
+
+```{r formula}
+sales.formula <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
+  IsHoliday*Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month
+```
+
+We define a convenience function for evaluating the model on the training and test sets:
+
+```{r}
+get.mses <- function(model){
+  test.mse <- mean((predict(model, test.set) - test.set$Norm_Sales)^2)
+  train.mse <- mean((predict(model, train.set) - train.set$Norm_Sales)^2)
+  paste('Train MSE:', train.mse,'; Test MSE:', test.mse)
+}
+```
 
 ### Model comparison
 
-TODO: linear, KNN, tree
+To start, we try a linear regression model. With no variable selection or shrinkage, it wouldn't be surprising to see the model overfit the data.
 
-TODO: stepwise selection to find most significant predictors; show that the training error keeps going down, but test error increases as some critical point
+```{r linear}
+linear.model <- lm(sales.formula, data=train.set)
+summary(linear.model)
+```
+
+In the summary, we see that:
+
+* Norm_CPI appears very significant while the other economic indicators do not. However, we suspect there is some collinearity between these three predictors, so we do not want to read too much into their relative significances. It seems that collinearity might also be leading to the negative Norm_Fuel_Price coefficient; based on our earlier analysis, we expected this to be negative.
+* The IsHolidays indicator variable has a very significant positive coefficient (i.e. holidays lead to more sales), and the store type C interaction has a significant negative coefficient (which aligns with our earlier observation that store type C did not exhibit the same seasonal behavior as the other store types in our timeseries plots).
+* Of all the lag variables, the sales from 52 weeks ago seem most important for prediction. The Lag_1_53_Diff variable, which we are using as a proxy for long-term trend, also stands out as being helpful for prediction.
+
+How does the MSE on the training set compare to the MSE on the test set?
+
+```{r linear_mses}
+get.mses(linear.model)
+```
+
+The test error is only slightly higher than the training error. This seems to indicate that we do not have a notable overfittig problem, even though we have not used any subset selection or shrinkage. Below, we apply subset selection using forward stepwise regression to see if/how the results change.
+
+```{r stepwise}
+# TODO: apply step
+```
+
+TODO: KNN, tree
 
 TODO: comparison
 
