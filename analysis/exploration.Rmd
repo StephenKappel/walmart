@@ -331,8 +331,13 @@ get.mses(linear.model)
 The test error is only slightly higher than the training error. This seems to indicate that we do not have a notable overfittig problem, even though we have not used any subset selection or shrinkage. Below, we apply subset selection using forward stepwise regression to see if/how the results change.
 
 ```{r stepwise}
-# TODO: apply step
+forward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.formula, 
+                      direction='forward', trace=FALSE)
+summary(forward.model)
+get.mses(forward.model)
 ```
+
+Using AIC to determine the optimal stopping point, the foreward stepwise regression included all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
 
 TODO: KNN, tree
 
