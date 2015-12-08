@@ -339,9 +339,33 @@ get.mses(forward.model)
 
 Using AIC to determine the optimal stopping point, the foreward stepwise regression included all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
 
-TODO: KNN, tree
+Next, we try KNN regression. We start by using leave-one-out cross validation on the training set to find the best value of k.
 
-TODO: comparison
+```{r knn_tuning}
+train.matrix <- model.matrix(object=sales.formula, data=train.set)
+train.matrix <- train.matrix[,2:ncol(train.matrix)]  # remove the (intercept) column
+require(FNN)
+for(k in 1:15){
+  knn.cv.model <- knn.reg(train.matrix, k=k, y=train.set$Norm_Sales)
+  print(paste('With k=', k, ', MSE is ', mean(knn.cv.model$residuals^2), '.', sep=''))
+}
+```
+
+Because k=5 minimized the MSE in cross validation, we use this to make predictions on our test set.
+
+```{r knn_pred}
+test.matrix <- model.matrix(object=sales.formula, data=test.set)
+test.matrix <- test.matrix[,2:ncol(test.matrix)]  # remove the (intercept) column
+knn.test.preds <- knn.reg(train.matrix, k=5, y=train.set$Norm_Sales, test=test.matrix)$pred
+knn.train.preds <- knn.reg(train.matrix, k=5, y=train.set$Norm_Sales, test=train.matrix)$pred
+knn.test.mse <- mean((knn.test.preds - test.set$Norm_Sales)^2)
+knn.train.mse <- mean((knn.train.preds - train.set$Norm_Sales)^2)
+paste('Train MSE:', knn.train.mse,'; Test MSE:', knn.test.mse)
+```
+
+For predicting Walmart's weekly store sales, KNN regression outperforms the linear models. KNN is a nonparametric method which uses only local information to make its prediction. In contrast, linear models fit a model globally and are less flexible. Because the more flexible model gives better results on the test set, we believe there is notable bias in the linear model, and more predictors would need to be collected or engineered for a linear model to yield less error.
+
+While the KNN model does give lower error, it doesn't provide nearly the same interpretability as the linear model. In practice, if we were working for Walmart, our interest would most likely be to understand the factors impacting sales so that Walmart could make decisions and take actions that would influence future sales. From that perspective, even if the linear model yields higher error on the test set than KNN, it is still more useful.
 
 ## Appendix
 
