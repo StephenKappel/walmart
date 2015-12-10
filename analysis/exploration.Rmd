@@ -234,7 +234,7 @@ ggplot(data=sales.by.store, aes(x=Date, y=Sales_Millions, group=Store, color=Sto
   geom_line() + guides(color=FALSE)
 ```
 
-To capture some of the seasonality and trending nature of the data, we add a month-of-year factor feature and we generate "lag" features that represent what the normalized sales were 1, 2, 52, and 53 weeks ago. We also create a feature that represents the difference in normalized sales between last week and 53 weeks ago.
+To capture some of the seasonality and trending nature of the data, we add a month-of-year factor feature and we generate "lag" features that represent what the normalized sales were 1, 2, 52, and 53 weeks ago. We also create a feature that represents the difference in normalized sales between last week and 53 weeks ago. By adding features representing past values of the same timeseries, we are creating an auto-regressive model. Because we are using auto-regressive in addition to other predictors, this can be classified as an ARX model.
 
 ```{r lag_variables}
 require(lubridate)
@@ -339,11 +339,30 @@ get.mses(forward.model)
 
 Using AIC to determine the optimal stopping point, the foreward stepwise regression included all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
 
+Instead of subset selection, we now try shrinkage. We use lasso regression. 10-fold cross validation is use to find the best value of lambda. Then, we use this optimal lambda to made predictions on our test set.
+
+```{r lasso}
+require(glmnet)
+train.matrix <- model.matrix(object=sales.formula, data=train.set)
+train.matrix <- train.matrix[,2:ncol(train.matrix)]  # remove the (intercept) column
+best.lambda <- cv.glmnet(x=train.matrix, y=train.set$Norm_Sales, nfolds=10, alpha=1)$lambda.min
+best.lambda
+lasso.betas <- glmnet(x=train.matrix, y=train.set$Norm_Sales, alpha=1, lambda=best.lambda)$beta
+lasso.betas
+test.matrix <- model.matrix(object=sales.formula, data=test.set)
+test.matrix <- test.matrix[,2:ncol(test.matrix)]  # remove the (intercept) column
+lasso.test.preds <-  test.matrix %*% lasso.betas
+lasso.train.preds <-  train.matrix %*% lasso.betas
+lasso.test.mse <- mean((lasso.test.preds - test.set$Norm_Sales)^2)
+lasso.train.mse <- mean((lasso.train.preds - train.set$Norm_Sales)^2)
+paste('Train MSE:', lasso.train.mse,'; Test MSE:', lasso.test.mse)
+```
+
+In this case, the optimal $\lambda$ was so small that no coefficients were shrunk all the way to zero. The coefficients are very similar to what we observed with ordinary linear regression. $\lambda$ is small because $n$ is much larger than $p$. Therefore, we don't have too much overfitting and so the penalty is small. Unlike subset selection - which marginally improved our test MSE - LASSO regression increased the squared bias more than it decreased the variance, thus leading to a much higher MSE than in our original linear regression model.
+
 Next, we try KNN regression. We start by using leave-one-out cross validation on the training set to find the best value of k.
 
 ```{r knn_tuning}
-train.matrix <- model.matrix(object=sales.formula, data=train.set)
-train.matrix <- train.matrix[,2:ncol(train.matrix)]  # remove the (intercept) column
 require(FNN)
 for(k in 1:15){
   knn.cv.model <- knn.reg(train.matrix, k=k, y=train.set$Norm_Sales)
@@ -354,8 +373,6 @@ for(k in 1:15){
 Because k=5 minimized the MSE in cross validation, we use this to make predictions on our test set.
 
 ```{r knn_pred}
-test.matrix <- model.matrix(object=sales.formula, data=test.set)
-test.matrix <- test.matrix[,2:ncol(test.matrix)]  # remove the (intercept) column
 knn.test.preds <- knn.reg(train.matrix, k=5, y=train.set$Norm_Sales, test=test.matrix)$pred
 knn.train.preds <- knn.reg(train.matrix, k=5, y=train.set$Norm_Sales, test=train.matrix)$pred
 knn.test.mse <- mean((knn.test.preds - test.set$Norm_Sales)^2)
@@ -369,7 +386,7 @@ While the KNN model does give lower error, it doesn't provide nearly the same in
 
 ## Appendix
 
-Here are some interesting observations that didn't directly fit into the analysis presented in the body of the report.
+The following observation did not directly fit into the analysis presented in the body of the report, but we thought it was interesting and wanted to include it.
 
 ```{r store_size_scatter}
 sales.by.size <- get.aggr.sales(store.level, c('Store', 'Store_Type', 'Store_Size'))
