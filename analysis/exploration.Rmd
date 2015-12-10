@@ -394,4 +394,25 @@ ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions, color=Store_Type)
   geom_point()
 ```
 
-There is roughly a linear relationship between a store's sales and its size. We also notice in the plot above that store type is closely related to both store sales and store size.
+There is what appears to be a roughly linear relationship between a store's sales and its size. We also notice in the plot above that store type is closely related to both store sales and store size.
+
+To get a sense of how local regression differs based on parameter values, we applied loess smoothing to this scatter plot.
+
+```{r store_size_loess}
+ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions)) + 
+  geom_point() + 
+  geom_smooth(method='loess', size=1, span=0.5, degree=1, 
+              aes(color='span 0.5; degree 1'), se=F) + 
+  geom_smooth(method='loess', size=1, span=0.5, degree=2, 
+              aes(color='span 0.5; degree 2'), se=F) +
+  geom_smooth(method='loess', size=1, span=1, degree=1, 
+              aes(color='span 1.0; degree 1'), se=F) +
+  geom_smooth(method='loess', size=1, span=1, degree=2, 
+              aes(color='span 1.0; degree 2'), se=F) +
+  scale_color_manual('', values=c('span 0.5; degree 1'='orange', 
+                                  'span 0.5; degree 2'='red', 
+                                  'span 1.0; degree 1'='blue', 
+                                  'span 1.0; degree 2'='green'))
+```
+
+As we expect, the local regressions with larger spans (i.e. less local), are less wiggly. And, the local regressions of degree two are more flexible than the regressions of degree 1. The regression with span of 1 and degree 1 is nearly a linear regression.
