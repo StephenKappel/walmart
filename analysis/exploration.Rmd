@@ -51,10 +51,9 @@ get.train <- function(){
 }
 
 get.store.level <- function(){
-  # construct a data.frame with detail down to the store and department level
+  # construct a data.frame with detail down to the store level (no departments)
   train <- get.train()
-  train_s <- ddply(train, c('Store', 'Date'), summarize, Sales=sum(Weekly_Sales))
-  train <- merge(train,train_s,by=c('Store','Date'))
+  train <- ddply(train, c('Store', 'Date'), summarize, Sales=sum(Weekly_Sales))
   stores <- get.stores()
   features <- get.features()
   merged <- merge(train, stores, by='Store')
@@ -64,7 +63,21 @@ get.store.level <- function(){
   return(merged)
 }
 
+get.dept.level <- function(){
+  # construct a data.frame with detail down to the department level
+  train <- get.train()
+  stores <- get.stores()
+  features <- get.features()
+  merged <- merge(train, stores, by='Store')
+  merged <- merge(merged, features, by=c('Store', 'Date'))
+  merged <- rename(merged, c('Type'='Store_Type', 'Size'='Store_Size',
+                             'Weekly_Sales'='Sales'))
+  merged$Sales_Millions <- merged$Sales / 10e6
+  return(merged)
+}
+
 store.level <- get.store.level()
+dept.level <- get.dept.level()
 ```
 
 As we do our analysis, we often find it helpful to normalize a column within the context of a store. This allows for more meaningful comparisons. Because this is a common operation, we define a function to add a nomalized column to a given data.frame for a specified column/attribute. To start, we add a normalized sales column to the `store.level` data.frame.
@@ -237,8 +250,6 @@ To capture some of the seasonality and trending nature of the data, we add a mon
 ```{r lag_variables}
 require(lubridate)
 store.level$Month <- as.factor(month(store.level$Date))
-store.level$WeekNum <- as.factor(as.integer(format(store.level$Date, "%W")) + 1)
-store.level$WeekNum <- as.factor(store.level$WeekNum)
 
 add.lag.column <- function(df, weeks){
   # df: data.frame (usually store.level) to which lag column will be added
@@ -423,35 +434,66 @@ ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions)) +
 As we expect, the local regressions with larger spans (i.e. less local), are less wiggly. And, the local regressions of degree two are more flexible than the regressions of degree 1. The regression with span of 1 and degree 1 is nearly a linear regression.
 
 Below we plot the mean weekly sales for the top 10 departments
-```{Dept variablae}
 
-sales.by.dept <- aggregate(Weekly_Sales ~ Dept,store.level,mean)
-sales.by.dept <- sales.by.dept[order(sales.by.dept$Weekly_Sales,decreasing=T)[1:10],]
-ggplot(data=sales.by.dept, aes(x=Dept, y=Weekly_Sales)) + 
-  geom_histogram(stat="identity")
+```{r dept_variables}
+sales.by.dept <- aggregate(Sales ~ Dept, dept.level, mean)
+sales.by.dept$Dept <- reorder(sales.by.dept$Dept, sales.by.dept$Sales)
+sales.by.dept <- sales.by.dept[1:10,]
+ggplot(data=sales.by.dept, aes(x=Dept, y=Sales)) + geom_bar(stat='identity') + coord_flip()
 ```
-
 
 Then we build a decision tree based on a combination of Store, Department and Week number as shown below
 
+```{r dept_normalizer}
+add.normalized.dept.col <- function(df, col.name){
+  # df: data.frame (usually store.level) to add normalized column to
+  # col.name: the name of the column in df which should be normalized
+  # the normalized column is named as 'Norm_[col.name]'
+  df$temp <- df[, col.name]
+  store.ply <- ddply(df, c('Store', 'Dept'), summarize, Mean_X=mean(temp), 
+                     SD_X=sd(temp))
+  df <- merge(df, store.ply, by=c('Store', 'Dept'))
+  df$Norm_X <- (df[,col.name] - df$Mean_X) / df$SD_X
+  df$Mean_X <- NULL
+  df$SD_X <- NULL
+  df$temp <- NULL
+  df <- rename(df, c('Norm_X'=paste('Norm_', col.name, sep='')))
+  return(df)
+}
+
+dept.level <- add.normalized.dept.col(dept.level, 'Sales')
+
+dept.level$WeekNum <- as.factor(as.integer(format(dept.level$Date, "%W")) + 1)
+# dept.level$WeekNum <- as.factor(store.level$WeekNum)
+```
+
+```{r dept_test_train}
+row.count=nrow(dept.level)
+train.ind <- sample(1:row.count, size=row.count*0.8)
+dept.train.set <- dept.level[train.ind, ]
+dept.test.set <- dept.level[-train.ind, ]
+paste(nrow(dept.train.set), 'training records;', nrow(dept.test.set), 'testing records')
+```
+
 ```{r decision_tree}
-dt <- rpart(Norm_Sales ~ Store + Dept + WeekNum, data=train.set)
-pred_dt <- predict(dt,  newdata=test.set)
+require(rpart)
+dt <- rpart(Norm_Sales ~ Store + Dept + WeekNum, data=dept.train.set)
+pred.dt <- predict(dt,  newdata=dept.test.set)
 ```
 
 We next cluster the weekly store sales by department using an unsupervised kmeans approach. 
 
-```{unsupervised}
-sales.dp=aggregate(Weekly_Sales ~ Dept + Date, data=store.level, mean)
-dp.mat = with(sales.dp, tapply(Weekly_Sales, list(Dept, Date), mean))
-#Replace NA with row means
-k <- which(is.na(dp.mat), arr.ind=TRUE)
-dp.mat[k] <- rowMeans(dp.mat, na.rm=TRUE)[k[,1]]
-km1 <- kmeans(dp.mat,7)
-depts <- data.frame(Dept.C=km1$cluster)
-depts$Dept <- row.names(depts)
-depts$Dept.C <- as.factor(depts$Dept.C)
-rm(km1, dp.mat, k, sales.dp)
-depts <- depts[c("Dept","Dept.C")]
-store_dp_clusters <- merge(x=store.level, y=depts, all.x=TRUE)
+```{r unsupervised}
+# sales.dp=aggregate(Sales ~ Dept + Date, data=dept.level, mean)
+# dp.mat = with(sales.dp, tapply(Weekly_Sales, list(Dept, Date), mean))
+# # Replace NA with row means
+# k <- which(is.na(dp.mat), arr.ind=TRUE)
+# dp.mat[k] <- rowMeans(dp.mat, na.rm=TRUE)[k[,1]]
+# km1 <- kmeans(dp.mat,7)
+# depts <- data.frame(Dept.C=km1$cluster)
+# depts$Dept <- row.names(depts)
+# depts$Dept.C <- as.factor(depts$Dept.C)
+# rm(km1, dp.mat, k, sales.dp)
+# depts <- depts[c("Dept","Dept.C")]
+# store_dp_clusters <- merge(x=store.level, y=depts, all.x=TRUE)
 ```
