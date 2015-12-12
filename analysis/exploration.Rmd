@@ -335,9 +335,14 @@ forward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.for
                       direction='forward', trace=FALSE)
 summary(forward.model)
 get.mses(forward.model)
+
+backward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.formula, 
+                      direction='backward', trace=FALSE)
+summary(backward.model)
+get.mses(backward.model)
 ```
 
-Using AIC to determine the optimal stopping point, the foreward stepwise regression included all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
+Using AIC to determine the optimal stopping point, the forward stepwise regression included all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
 
 Instead of subset selection, we now try shrinkage. We use lasso regression. 10-fold cross validation is use to find the best value of lambda. Then, we use this optimal lambda to made predictions on our test set.
 
