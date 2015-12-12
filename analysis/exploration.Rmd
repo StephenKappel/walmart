@@ -24,7 +24,7 @@ In our analysis, sales is the outcome variable of primary interest. We aim to un
 
 ## Data Preparation
 
-Kaggle provides the data in the form of three CSVs. We a data.frames that combines the three source CSVs together. `store.level` contains one row per store per week. (The original data had an additional "department" level of detail that we have removed.)
+Kaggle provides the data in the form of three CSVs. We combined the three source CSVs together to aggregate weekly sales by store and department in to a single data frame. This was implemented using the merge function. For better visualization and analysis, we categorized certain fields in to classes.
 
 ```{r data_prep}
 require(plyr)
@@ -51,9 +51,10 @@ get.train <- function(){
 }
 
 get.store.level <- function(){
-  # construct a data.frame with detail only down to the store level (no departments)
+  # construct a data.frame with detail down to the store and department level
   train <- get.train()
-  train <- ddply(train, c('Store', 'Date'), summarize, Sales=sum(Weekly_Sales))
+  train_s <- ddply(train, c('Store', 'Date'), summarize, Sales=sum(Weekly_Sales))
+  train <- merge(train,train_s,by=c('Store','Date'))
   stores <- get.stores()
   features <- get.features()
   merged <- merge(train, stores, by='Store')
@@ -106,7 +107,7 @@ get.aggr.sales <- function(df, aggr.dims, filter=NULL){
 }
 ```
 
-Let's take a look at the normalized distribution of store-level weekly sales. We hope this is roughly normal as it will allow us to apply some statistical tests with more confidence in the coming analysis.
+Let's take a look at the normalized distribution of store-level weekly sales. If the data turns out to be normally distributed, we will apply some statistical tests for normally distributed data.
 
 ```{r sales_distribution}
 require(ggplot2)
@@ -142,7 +143,7 @@ ggplot(data=store.level, aes(x=Norm_Unemployment, y=Norm_Sales)) +
   geom_smooth(method='gam', color='red')
 ```
 
-Within the -1 to 1 normalized unemployment range, a patter seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales - one histogram for weeks with below average unemployment and on histogram for weeks with above average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is normally distributed and a t-test would be reasonable.
+Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales - one histogram for weeks with below average unemployment and on histogram for weeks with above average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is normally distributed and a t-test would be reasonable.
 
 ```{r facet_hist}
 store.level$Unemployment_Category <- ifelse(
@@ -176,9 +177,6 @@ From all the results above, we can conclude that unemployment rate is not indepe
 We repeat the same procedures for CPI and fuel price. We hide the code and output to save space, but we summarize the p-values from the tests  in the table below:
 
 ```{r cpi_fuel, include=FALSE}
-# Note: this should probably be refactored as a function, but this is hidden, so not 
-# worrying about it for now.
-
 # CPI
 store.level <- add.normalized.col(store.level, 'CPI')
 store.level$CPI_Category <- ifelse(
@@ -218,7 +216,7 @@ With the goal of creating a model to predict store-level normalized sales for a 
 
 ### Features
 
-In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple plots show that dates will also be important in our prediction; we observe seasonality and trending patters in the timeseries.
+In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple plots show that dates will also be important in our prediction; we observe seasonality and trending patterns in the timeseries.
 
 ```{r trend_plots}
 # plot sales by week
@@ -239,6 +237,8 @@ To capture some of the seasonality and trending nature of the data, we add a mon
 ```{r lag_variables}
 require(lubridate)
 store.level$Month <- as.factor(month(store.level$Date))
+store.level$WeekNum <- as.factor(as.integer(format(store.level$Date, "%W")) + 1)
+store.level$WeekNum <- as.factor(store.level$WeekNum)
 
 add.lag.column <- function(df, weeks){
   # df: data.frame (usually store.level) to which lag column will be added
@@ -416,3 +416,37 @@ ggplot(data=sales.by.size, aes(x=Store_Size, y=Sales_Millions)) +
 ```
 
 As we expect, the local regressions with larger spans (i.e. less local), are less wiggly. And, the local regressions of degree two are more flexible than the regressions of degree 1. The regression with span of 1 and degree 1 is nearly a linear regression.
+
+Below we plot the mean weekly sales for the top 10 departments
+```{Dept variablae}
+
+sales.by.dept <- aggregate(Weekly_Sales ~ Dept,store.level,mean)
+sales.by.dept <- sales.by.dept[order(sales.by.dept$Weekly_Sales,decreasing=T)[1:10],]
+ggplot(data=sales.by.dept, aes(x=Dept, y=Weekly_Sales)) + 
+  geom_histogram(stat="identity")
+```
+
+
+Then we build a decision tree based on a combination of Store, Department and Week number as shown below
+
+```{r decision_tree}
+dt <- rpart(Norm_Sales ~ Store + Dept + WeekNum, data=train.set)
+pred_dt <- predict(dt,  newdata=test.set)
+```
+
+We next cluster the weekly store sales by department using an unsupervised kmeans approach. 
+
+```{unsupervised}
+sales.dp=aggregate(Weekly_Sales ~ Dept + Date, data=store.level, mean)
+dp.mat = with(sales.dp, tapply(Weekly_Sales, list(Dept, Date), mean))
+#Replace NA with row means
+k <- which(is.na(dp.mat), arr.ind=TRUE)
+dp.mat[k] <- rowMeans(dp.mat, na.rm=TRUE)[k[,1]]
+km1 <- kmeans(dp.mat,7)
+depts <- data.frame(Dept.C=km1$cluster)
+depts$Dept <- row.names(depts)
+depts$Dept.C <- as.factor(depts$Dept.C)
+rm(km1, dp.mat, k, sales.dp)
+depts <- depts[c("Dept","Dept.C")]
+store_dp_clusters <- merge(x=store.level, y=depts, all.x=TRUE)
+```
