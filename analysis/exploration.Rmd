@@ -24,7 +24,7 @@ In our analysis, sales is the outcome variable of primary interest. We aim to un
 
 ## Data Preparation
 
-Kaggle provides the data in the form of three CSVs. We combined the three source CSVs together to aggregate weekly sales by store and department in to a single data frame. This was implemented using the merge function. For better visualization and analysis, we categorized certain fields in to classes.
+Kaggle provides the data in the form of three CSVs. We combined the three files together to aggregate weekly sales by store in a single `data.frame` with all associated features. This was implemented using the merge function. For better visualization and analysis, we categorized certain fields in to classes.
 
 ```{r data_prep}
 require(plyr)
@@ -140,7 +140,7 @@ ggplot(data=store.level, aes(x=Unemployment, y=Sales_Millions,
   group=round_any(Unemployment, 1.0))) + geom_boxplot()
 ```
 
-This plot don't show much of a relationship, but we haven't done any normalization, so this probably isn't a meaningful representation of the relationship. We normalize sales and unemployment rate by store and create an update boxplot.
+This plot don't show much of a relationship, but we haven't done any normalization, so this probably isn't a meaningful representation of the relationship. We normalize sales and unemployment rate by store and create an updated boxplot.
 
 ```{r boxplot2}
 store.level <- add.normalized.col(store.level, 'Unemployment')
@@ -156,7 +156,7 @@ ggplot(data=store.level, aes(x=Norm_Unemployment, y=Norm_Sales)) +
   geom_smooth(method='gam', color='red')
 ```
 
-Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales - one histogram for weeks with below average unemployment and on histogram for weeks with above average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is normally distributed and a t-test would be reasonable.
+Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales -- one histogram for weeks with below-average unemployment and one histogram for weeks with above-average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is roughly normally distributed so that a t-test could be reasonably applied.
 
 ```{r facet_hist}
 store.level$Unemployment_Category <- ifelse(
@@ -173,7 +173,7 @@ below <- subset(store.level, Unemployment_Category == 'Below Average')
 var.test(above$Norm_Sales, below$Norm_Sales)
 ```
 
-We reject the null hypothesis that the populations have equal variance, so we proceed with Welsh t-test for populations with unequal variances. The null hypothesis of this t-test is that the mean normalized sales during weeks with above average unemployment rates is equal to the mean normalized sales during weeks with below average umemployment rates.
+We reject the null hypothesis that the populations have equal variance, so we proceed with Welsh t-test for populations with unequal variances. The null hypothesis of this t-test is that the mean normalized sales during weeks with above-average unemployment rates is equal to the mean normalized sales during weeks with below-average umemployment rates.
 
 ```{r Welsh_test}
 t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
@@ -185,7 +185,7 @@ We can confidently reject the null hypothesis. Now, we drop our assumption of no
 wilcox.test(Norm_Sales ~ Unemployment_Category, data=store.level)
 ```
 
-From all the results above, we can conclude that unemployment rate is not independent of Walmart sales.
+From all the results above, we can conclude that Walmart's sales are not independent from the unemployment rate; the two variables are negatively correlated.
 
 We repeat the same procedures for CPI and fuel price. We hide the code and output to save space, but we summarize the p-values from the tests  in the table below:
 
@@ -229,7 +229,7 @@ With the goal of creating a model to predict store-level normalized sales for a 
 
 ### Features
 
-In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple plots show that dates will also be important in our prediction; we observe seasonality and trending patterns in the timeseries.
+In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple plots show that dates will also be important in our prediction; we observe seasonality and trending patterns in the time series.
 
 ```{r trend_plots}
 # plot sales by week
@@ -245,7 +245,7 @@ ggplot(data=sales.by.store, aes(x=Date, y=Sales_Millions, group=Store, color=Sto
   geom_line() + guides(color=FALSE)
 ```
 
-To capture some of the seasonality and trending nature of the data, we add a month-of-year factor feature and we generate "lag" features that represent what the normalized sales were 1, 2, 52, and 53 weeks ago. We also create a feature that represents the difference in normalized sales between last week and 53 weeks ago. By adding features representing past values of the same timeseries, we are creating an auto-regressive model. Because we are using auto-regressive in addition to other predictors, this can be classified as an ARX model.
+To capture some of the seasonality and trending nature of the data, we add a month-of-year factor feature and we generate "lag" features that represent what the normalized sales were 1, 2, 3, 4, 51, and 52 weeks ago. In an attempt to capture trending, we also create a feature that represents the difference in normalized sales between last week and 53 weeks ago. By adding features representing past values of the same time series, we are creating an auto-regressive model. Because we are using auto-regressive features in addition to other predictors, this can be classified as an ARX model.
 
 ```{r lag_variables}
 require(lubridate)
@@ -283,7 +283,7 @@ ggplot(data=store.level, aes(x=Norm_Temperature, y=Norm_Sales)) + geom_point(alp
 
 ### Setup
 
-We limit the testing/training sets to data after February 11, 2011, because we cannot calculate all of our lag features for weeks before then. We then divide all the remain data points randomly into an 80% training set and a 20% test set.
+We limit the testing/training sets to data after February 11, 2011, because we cannot calculate all of our lag features for weeks before then. We divide the remain data points randomly into an 80% training set and a 20% test set.
 
 ```{r test_train}
 test.train <- subset(store.level, Date >= '2011-02-11')
@@ -329,8 +329,8 @@ summary(linear.model)
 
 In the summary, we see that:
 
-* Norm_CPI appears very significant while the other economic indicators do not. However, we suspect there is some collinearity between these three predictors, so we do not want to read too much into their relative significances. It seems that collinearity might also be leading to the negative Norm_Fuel_Price coefficient; based on our earlier analysis, we expected this to be negative.
-* The IsHolidays indicator variable has a very significant positive coefficient (i.e. holidays lead to more sales), and the store type C interaction has a significant negative coefficient (which aligns with our earlier observation that store type C did not exhibit the same seasonal behavior as the other store types in our timeseries plots).
+* Norm_CPI appears very significant while the other economic indicators do not. However, we suspect there is some collinearity between these three predictors, so we do not want to read too much into their relative significances. It seems that collinearity might also be leading to the positive Norm_Fuel_Price coefficient; based on our earlier analysis, we expected this to be negative.
+* The IsHoliday indicator variable has a very significant positive coefficient (i.e. holidays lead to more sales), and the store type C interaction has a significant negative coefficient (which aligns with our earlier observation that store type C did not exhibit the same seasonal behavior as the other store types in our time series plots).
 * Of all the lag variables, the sales from 52 weeks ago seem most important for prediction. The Lag_1_53_Diff variable, which we are using as a proxy for long-term trend, also stands out as being helpful for prediction.
 
 How does the MSE on the training set compare to the MSE on the test set?
@@ -339,7 +339,7 @@ How does the MSE on the training set compare to the MSE on the test set?
 get.mses(linear.model)
 ```
 
-The test error is only slightly higher than the training error. This seems to indicate that we do not have a notable overfittig problem, even though we have not used any subset selection or shrinkage. Below, we apply subset selection using forward stepwise regression to see if/how the results change.
+The test error is only slightly higher than the training error. This seems to indicate that we do not have a notable overfitting problem, even though we have not used any subset selection or shrinkage. Below, we apply subset selection using forward and backward stepwise regression to see if/how the results change.
 
 ```{r stepwise}
 forward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.formula, 
@@ -347,15 +347,15 @@ forward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.for
 summary(forward.model)
 get.mses(forward.model)
 
-backward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.formula, 
-                      direction='backward', trace=FALSE)
+backward.model <- step(object=lm(sales.formula, data=train.set), 
+                       direction='backward', trace=FALSE)
 summary(backward.model)
 get.mses(backward.model)
 ```
 
-Using AIC to determine the optimal stopping point, the forward stepwise regression included all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
+Using AIC to determine the optimal stopping point, the forward stepwise regression and backward stepwise regression yield exactly the same result. They include all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
 
-Instead of subset selection, we now try shrinkage. We use lasso regression. 10-fold cross validation is use to find the best value of lambda. Then, we use this optimal lambda to made predictions on our test set.
+Instead of subset selection, we now try shrinkage. We use lasso regression. 10-fold cross validation is used to find the best value of $\lambda$. Then, we use this optimal $\lambda$ to made predictions on our test set.
 
 ```{r lasso}
 require(glmnet)
@@ -402,7 +402,7 @@ While the KNN model does give lower error, it doesn't provide nearly the same in
 
 ## Appendix
 
-The following observation did not directly fit into the analysis presented in the body of the report, but we thought it was interesting and wanted to include it.
+The following observations did not directly fit into the analysis presented in the body of the report, but we thought it was interesting and wanted to include it.
 
 ```{r store_size_scatter}
 sales.by.size <- get.aggr.sales(store.level, c('Store', 'Store_Type', 'Store_Size'))
