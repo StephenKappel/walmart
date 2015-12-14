@@ -64,6 +64,14 @@ get.store.level <- function(){
 }
 
 store.level <- get.store.level()
+
+# PairWise plots and Correlations
+pairs(~ Sales + Temperature + Fuel_Price + CPI + Unemployment, data = store.level, main = "PairWise Plot1")
+pairs(~ Sales + MarkDown1 + MarkDown2 + MarkDown3 + MarkDown4 + MarkDown5, data = store.level, main = "PairWise Plot2")
+require(GGally)
+ggpairs(store.level[,c("Sales", "CPI", "Unemployment")],
+        title="Correlation Matrix for Macro Indicators") 
+ggpairs(store.level[,c("Sales", "MarkDown1", "MarkDown2", "MarkDown3", "MarkDown4","MarkDown5")], title="Correlation Matrix for MarkDowns") 
 ```
 
 As we do our analysis, we often find it helpful to normalize a column within the context of a store. This allows for more meaningful comparisons. Because this is a common operation, we define a function to add a nomalized column to a given data.frame for a specified column/attribute. To start, we add a normalized sales column to the `store.level` data.frame.
