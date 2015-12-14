@@ -14,7 +14,7 @@ knitr::opts_chunk$set(fig.height=3, warning=FALSE, message=FALSE)
 For our project, we chose to use sales data provided by Walmart as part of the *Walmart Recruiting - Store Sales Forecasting* competition on Kaggle in 2014. (See https://www.kaggle.com/c/walmart-recruiting-store-sales-forecasting.) The dataset contains weekly sales for 45 Walmart stores from 2/5/2010 to 11/1/2012. The sales are broken out by store and by department. Other attributes provide further context to the sales numbers:
 
 * _Economic indicators:_ CPI, unemployment rate, fuel prices
-* _Store-specific attributes:_ store size, store type, markdowns (indicator variables for five types of markdowns)
+* _Store-specific attributes:_ store size, store type, markdowns (one numeric variable for each of five types of markdowns)
 * _Other:_ temperature, holiday (indicator variable)
 
 In our analysis, sales is the outcome variable of primary interest. We aim to understand what factors impact sales. In particular, we try to answer:
@@ -307,6 +307,7 @@ To allow us to make good comparisons between models, we use a consistent set of 
 * A holiday indicator variable with a Store_Type interaction (because we saw that store type C was less impacted by the holiday season than were the other store types)
 * Normalized temperature
 * Month-of-year and lag features
+* Five normalized markdown features
 
 ```{r formula}
 sales.formula <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
@@ -341,9 +342,10 @@ summary(linear.model)
 
 In the summary, we see that:
 
-* Norm_CPI appears very significant while the other economic indicators do not. However, we suspect there is some collinearity between these three predictors, so we do not want to read too much into their relative significances. It seems that collinearity might also be leading to the positive Norm_Fuel_Price coefficient; based on our earlier analysis, we expected this to be negative.
+* Norm_Unemployment and Norm_CPI appear somewhat significant, but Norm_Fuel_Price does not. And, the Norm_Fuel_Price coefficient is positive, even though our earlier analysis indicated this coefficient should be negative. We suspect there is some collinearity between these three predictors, so we do not want to read too much into their relative significances.
 * The IsHoliday indicator variable has a very significant positive coefficient (i.e. holidays lead to more sales), and the store type C interaction has a significant negative coefficient (which aligns with our earlier observation that store type C did not exhibit the same seasonal behavior as the other store types in our time series plots).
-* Of all the lag variables, the sales from 52 weeks ago seem most important for prediction. The Lag_1_53_Diff variable, which we are using as a proxy for long-term trend, also stands out as being helpful for prediction.
+* All of the time-based predictors appear to be very significant.
+* Of the five different markdowns, only MarkDown2 and MarkDown3 appear to be strong predictors.
 
 How does the MSE on the training set compare to the MSE on the test set?
 
@@ -351,7 +353,7 @@ How does the MSE on the training set compare to the MSE on the test set?
 get.mses(linear.model)
 ```
 
-The test error is only slightly higher than the training error. This seems to indicate that we do not have a notable overfitting problem, even though we have not used any subset selection or shrinkage. Below, we apply subset selection using forward and backward stepwise regression to see if/how the results change.
+The test error is only slightly higher than the training error. This seems to indicate that we do not have a big overfitting problem, even though we have not used any subset selection or shrinkage. Below, we apply subset selection using forward and backward stepwise regression to see if/how the results change.
 
 ```{r stepwise}
 forward.model <- step(object=lm(Norm_Sales ~ 1, data=train.set), scope=sales.formula, 
@@ -365,7 +367,7 @@ summary(backward.model)
 get.mses(backward.model)
 ```
 
-Using AIC to determine the optimal stopping point, the forward stepwise regression and backward stepwise regression yield exactly the same result. They include all predictors in the model except for Norm_Temperature and Norm_Fuel_Price. The test MSE increased, but we successfully decreased the training MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
+Using AIC to determine the optimal stopping point, the forward stepwise regression and backward stepwise regression yield exactly the same result. They include all predictors in the model except for Norm_MarkDown1, Norm_MarkDown4, Norm_MarkDown5 Norm_Temperature and Norm_Fuel_Price. The train MSE increased, but we successfully decreased the test MSE. We interpret this to mean that the increase in (squared) bias we incurred by removing predictors was less than the decrease in variance that we gained.
 
 Instead of subset selection, we now try shrinkage. We use lasso regression. 10-fold cross validation is used to find the best value of $\lambda$. Then, we use this optimal $\lambda$ to made predictions on our test set.
 
@@ -386,7 +388,7 @@ lasso.train.mse <- mean((lasso.train.preds - train.set$Norm_Sales)^2)
 paste('Train MSE:', lasso.train.mse,'; Test MSE:', lasso.test.mse)
 ```
 
-In this case, the optimal $\lambda$ was so small that no coefficients were shrunk all the way to zero. The coefficients are very similar to what we observed with ordinary linear regression. $\lambda$ is small because $n$ is much larger than $p$. Therefore, we don't have too much overfitting and so the penalty is small. Unlike subset selection, which marginally improved our test MSE, LASSO regression increased the squared bias more than it decreased the variance, thus leading to a much higher MSE than in our original linear regression model.
+In this case, the optimal $\lambda$ was so small that no coefficients were shrunk all the way to zero. The coefficients are of similar relative magnitude as to what we observed with ordinary linear regression, but most are closert to zero. $\lambda$ is small because $n$ is much larger than $p$. Therefore, we don't have too much overfitting and the penalty is small. Unlike subset selection, which marginally improved our test MSE, LASSO regression increased the squared bias more than it decreased the variance, thus leading to a much higher MSE than in our original linear regression model.
 
 Next, we try KNN regression. We start by using leave-one-out cross validation on the training set to find the best value of k.
 
@@ -398,11 +400,11 @@ for(k in 1:15){
 }
 ```
 
-Because k=5 minimized the MSE in cross validation, we use this to make predictions on our test set.
+Because k=4 minimized the MSE in cross validation, we use this to make predictions on our test set.
 
 ```{r knn_pred}
-knn.test.preds <- knn.reg(train.matrix, k=5, y=train.set$Norm_Sales, test=test.matrix)$pred
-knn.train.preds <- knn.reg(train.matrix, k=5, y=train.set$Norm_Sales, test=train.matrix)$pred
+knn.test.preds <- knn.reg(train.matrix, k=4, y=train.set$Norm_Sales, test=test.matrix)$pred
+knn.train.preds <- knn.reg(train.matrix, k=4, y=train.set$Norm_Sales, test=train.matrix)$pred
 knn.test.mse <- mean((knn.test.preds - test.set$Norm_Sales)^2)
 knn.train.mse <- mean((knn.train.preds - train.set$Norm_Sales)^2)
 paste('Train MSE:', knn.train.mse,'; Test MSE:', knn.test.mse)
