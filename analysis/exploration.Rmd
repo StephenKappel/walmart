@@ -267,6 +267,25 @@ store.level <- add.normalized.col(store.level, 'Temperature')
 ggplot(data=store.level, aes(x=Norm_Temperature, y=Norm_Sales)) + geom_point(alpha=1/5)
 ```
 
+```{Markups}
+#Make the NA markdown to 0
+fillMarkDownZero <- function(df) {
+  df$MarkDown1[is.na(df$MarkDown1)] <- 0
+  df$MarkDown2[is.na(df$MarkDown2)] <- 0
+  df$MarkDown3[is.na(df$MarkDown3)] <- 0
+  df$MarkDown4[is.na(df$MarkDown4)] <- 0
+  df$MarkDown5[is.na(df$MarkDown5)] <- 0
+  return (df)
+}
+
+store.level <- fillMarkDownZero(store.level)
+store.level <- add.normalized.col(store.level, 'MarkDown1')
+store.level <- add.normalized.col(store.level, 'MarkDown2')
+store.level <- add.normalized.col(store.level, 'MarkDown3')
+store.level <- add.normalized.col(store.level, 'MarkDown4')
+store.level <- add.normalized.col(store.level, 'MarkDown5')
+```
+
 ### Setup
 
 We limit the testing/training sets to data after February 11, 2011, because we cannot calculate all of our lag features for weeks before then. We divide the remain data points randomly into an 80% training set and a 20% test set.
@@ -291,11 +310,11 @@ To allow us to make good comparisons between models, we use a consistent set of 
 ```{r formula}
 sales.formula <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
   IsHoliday*Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
-  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month +   Norm_MarkDown1 + Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
 # version without interactions to be used for our decision tree model
 sales.formula.no.interactions <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
   IsHoliday + Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
-  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month 
 ```
 
 We define a convenience function for evaluating the model on the training and test sets:
