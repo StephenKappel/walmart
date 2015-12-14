@@ -69,18 +69,22 @@ store.level <- get.store.level()
 As we do our analysis, we often find it helpful to normalize a column within the context of a store. This allows for more meaningful comparisons. Because this is a common operation, we define a function to add a nomalized column to a given data.frame for a specified column/attribute. To start, we add a normalized sales column to the `store.level` data.frame.
 
 ```{r normalizer}
-add.normalized.col <- function(df, col.name){
+add.normalized.col <- function(df, col.name, impute=FALSE){
   # df: data.frame (usually store.level) to add normalized column to
   # col.name: the name of the column in df which should be normalized
+  # impute: if TRUE, fill in missing values as 0 (the mean)
   # the normalized column is named as 'Norm_[col.name]'
   df$temp <- df[, col.name]
-  store.ply <- ddply(df, c('Store'), summarize, Mean_X=mean(temp), 
-                     SD_X=sd(temp))
+  store.ply <- ddply(df, c('Store'), summarize, Mean_X=mean(temp, na.rm=TRUE), 
+                     SD_X=sd(temp, na.rm=TRUE))
   df <- merge(df, store.ply, by=c('Store'))
   df$Norm_X <- (df[,col.name] - df$Mean_X) / df$SD_X
   df$Mean_X <- NULL
   df$SD_X <- NULL
   df$temp <- NULL
+  if(impute){
+    df$Norm_X[is.na(df$Norm_X)] <- 0
+  }
   df <- rename(df, c('Norm_X'=paste('Norm_', col.name, sep='')))
   return(df)
 }
@@ -267,23 +271,12 @@ store.level <- add.normalized.col(store.level, 'Temperature')
 ggplot(data=store.level, aes(x=Norm_Temperature, y=Norm_Sales)) + geom_point(alpha=1/5)
 ```
 
-```{Markups}
-#Make the NA markdown to 0
-fillMarkDownZero <- function(df) {
-  df$MarkDown1[is.na(df$MarkDown1)] <- 0
-  df$MarkDown2[is.na(df$MarkDown2)] <- 0
-  df$MarkDown3[is.na(df$MarkDown3)] <- 0
-  df$MarkDown4[is.na(df$MarkDown4)] <- 0
-  df$MarkDown5[is.na(df$MarkDown5)] <- 0
-  return (df)
-}
+Finally, we use the five markdown attributes in the data set. We normalize the values by store. These attributes have a lot of missing values; we impute missing values to be the given store's average markdown. 
 
-store.level <- fillMarkDownZero(store.level)
-store.level <- add.normalized.col(store.level, 'MarkDown1')
-store.level <- add.normalized.col(store.level, 'MarkDown2')
-store.level <- add.normalized.col(store.level, 'MarkDown3')
-store.level <- add.normalized.col(store.level, 'MarkDown4')
-store.level <- add.normalized.col(store.level, 'MarkDown5')
+```{r markdowns}
+for (md in 1:5){
+  store.level <- add.normalized.col(store.level, paste('MarkDown', md, sep=''), impute=TRUE)
+}
 ```
 
 ### Setup
@@ -310,11 +303,13 @@ To allow us to make good comparisons between models, we use a consistent set of 
 ```{r formula}
 sales.formula <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
   IsHoliday*Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
-  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month +   Norm_MarkDown1 + Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month + Norm_MarkDown1 +
+  Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
 # version without interactions to be used for our decision tree model
 sales.formula.no.interactions <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
   IsHoliday + Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
-  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month 
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month + Norm_MarkDown1 +
+  Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
 ```
 
 We define a convenience function for evaluating the model on the training and test sets:
