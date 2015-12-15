@@ -146,7 +146,7 @@ ggplot(data=store.level, aes(x=Norm_Unemployment, y=Norm_Sales)) +
   geom_smooth(method='gam', color='red')
 ```
 
-Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales -- one histogram for weeks with below-average unemployment and one histogram for weeks with above-average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is roughly normally distributed so that a t-test could be reasonably applied.
+Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales -- one histogram for weeks with below-average unemployment and one histogram for weeks with above-average unemployment. We want to see if these distributions are noticeably different. We also want to see the shape of these distributions to see if the data is roughly normally distributed so that a t-test could be reasonably applied.
 
 ```{r facet_hist}
 store.level$Unemployment_Category <- ifelse(
@@ -169,7 +169,7 @@ We reject the null hypothesis that the populations have equal variance, so we pr
 t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
 ```
 
-We can confidently reject the null hypothesis. Now, we drop our assumption of normality, and perform a non-parametric test to see determine if sales for weeks with above-average unemployment are drawn from a different distribution than the sales for weeks with below-average unemployment. We apply the Mann-Whitney-Wilcoxon procedure below.
+We can confidently reject the null hypothesis. Now, we drop our assumption of normality, and perform a non-parametric test to determine if sales for weeks with above-average unemployment are drawn from a different distribution than the sales for weeks with below-average unemployment. We apply the Mann-Whitney-Wilcoxon procedure below.
 
 ```{r wilcox_test}
 wilcox.test(Norm_Sales ~ Unemployment_Category, data=store.level)
