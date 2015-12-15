@@ -24,11 +24,7 @@ In our analysis, sales is the outcome variable of primary interest. We aim to un
 
 ## Data Preparation
 
-<<<<<<< Updated upstream
 Kaggle provides the data in the form of three CSVs. We use the `merge` function to combine the three files together, resulting in aggregate weekly sales by store in a single `data.frame` with all associated features. We cast several categorical variables into `factor` types and do some column renaming. Our `data.frame` with all store-level sales aggregates is named `store.level`.
-=======
-Kaggle provides the data in the form of three CSVs. We combined the three source CSVs together to aggregate weekly sales by store and department into a single data frame. This was implemented using the merge function. For better visualization and analysis, we categorized certain fields in to classes.
->>>>>>> Stashed changes
 
 ```{r data_prep}
 require(plyr)
@@ -73,18 +69,22 @@ store.level <- get.store.level()
 As we do our analysis, we often find it helpful to normalize a column within the context of a store. This allows for more meaningful comparisons. Because this is a common operation, we define a function to add a nomalized column to a given data.frame for a specified column/attribute. To start, we add a normalized sales column to the `store.level` data.frame.
 
 ```{r normalizer}
-add.normalized.col <- function(df, col.name){
+add.normalized.col <- function(df, col.name, impute=FALSE){
   # df: data.frame (usually store.level) to add normalized column to
   # col.name: the name of the column in df which should be normalized
+  # impute: if TRUE, fill in missing values as 0 (the mean)
   # the normalized column is named as 'Norm_[col.name]'
   df$temp <- df[, col.name]
-  store.ply <- ddply(df, c('Store'), summarize, Mean_X=mean(temp), 
-                     SD_X=sd(temp))
+  store.ply <- ddply(df, c('Store'), summarize, Mean_X=mean(temp, na.rm=TRUE), 
+                     SD_X=sd(temp, na.rm=TRUE))
   df <- merge(df, store.ply, by=c('Store'))
   df$Norm_X <- (df[,col.name] - df$Mean_X) / df$SD_X
   df$Mean_X <- NULL
   df$SD_X <- NULL
   df$temp <- NULL
+  if(impute){
+    df$Norm_X[is.na(df$Norm_X)] <- 0
+  }
   df <- rename(df, c('Norm_X'=paste('Norm_', col.name, sep='')))
   return(df)
 }
@@ -146,11 +146,7 @@ ggplot(data=store.level, aes(x=Norm_Unemployment, y=Norm_Sales)) +
   geom_smooth(method='gam', color='red')
 ```
 
-<<<<<<< Updated upstream
 Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales -- one histogram for weeks with below-average unemployment and one histogram for weeks with above-average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is roughly normally distributed so that a t-test could be reasonably applied.
-=======
-Within the -1 to 1 normalized unemployment range, a pattern seems to have emerged. There appears to be below-average sales when there is above-average unemployment. Let's create a pair of histograms showing number of weeks by normalized sales - one histogram for weeks with below average unemployment and one histogram for weeks with above average unemployment. We want to see if these distributions are noticably different. We also want to see the shape of these distributions to see if the data is normally distributed and a t-test would be reasonable.
->>>>>>> Stashed changes
 
 ```{r facet_hist}
 store.level$Unemployment_Category <- ifelse(
@@ -173,7 +169,7 @@ We reject the null hypothesis that the populations have equal variance, so we pr
 t.test(above$Norm_Sales, below$Norm_Sales, var.equal=FALSE)
 ```
 
-We can confidently reject the null hypothesis. Now, we drop our assumption of normality, and perform a non-parametric test to determine if sales for weeks with above-average unemployment are drawn from a different distribution than the sales for weeks with below-average unemployment. We apply the Mann-Whitney-Wilcoxon procedure below.
+We can confidently reject the null hypothesis. Now, we drop our assumption of normality, and perform a non-parametric test to see determine if sales for weeks with above-average unemployment are drawn from a different distribution than the sales for weeks with below-average unemployment. We apply the Mann-Whitney-Wilcoxon procedure below.
 
 ```{r wilcox_test}
 wilcox.test(Norm_Sales ~ Unemployment_Category, data=store.level)
@@ -223,11 +219,7 @@ With the goal of creating a model to predict store-level normalized sales for a 
 
 ### Features
 
-<<<<<<< Updated upstream
 In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple plots show that dates will also be important in our prediction; we observe seasonality and trending patterns in the time series.
-=======
-In order to make good predictions about sales, we need to consider much more than just the economic factors we've considered so far. For example, the next couple of plots show that dates will also be important in our prediction; we observe seasonality and trending patterns in the timeseries.
->>>>>>> Stashed changes
 
 ```{r trend_plots}
 # plot sales by week
@@ -287,7 +279,6 @@ ggpairs(store.level[,c('Norm_Sales', 'Norm_CPI', 'Norm_Unemployment', 'Norm_Temp
         columnLabels=c('Sales', 'CPI', 'Unemployment', 'Temperature', 'Fuel Price')) 
 ```
 
-<<<<<<< Updated upstream
 Finally, we use the five markdown attributes in the data set. We normalize the values by store. These attributes have a lot of missing values; we impute missing values to be the given store's average markdown. 
 
 ```{r markdowns, fig.height=4}
@@ -299,25 +290,6 @@ ggpairs(store.level[,c('Norm_Sales', 'Norm_MarkDown1', 'Norm_MarkDown2', 'Norm_M
         title='Pair plot for MarkDowns', axisLabels='internal',
         upper = list(continuous='cor'), lower=list(continuous='points'),
         columnLabels=c('Sales', 'MarkDown1', 'MarkDown2', 'MarkDown3', 'MarkDown4', 'MarkDown5'))
-=======
-```{Markups}
-#Make the NA markdown to 0
-fillMarkDownZero <- function(df) {
-  df$MarkDown1[is.na(df$MarkDown1)] <- 0
-  df$MarkDown2[is.na(df$MarkDown2)] <- 0
-  df$MarkDown3[is.na(df$MarkDown3)] <- 0
-  df$MarkDown4[is.na(df$MarkDown4)] <- 0
-  df$MarkDown5[is.na(df$MarkDown5)] <- 0
-  return (df)
-}
-
-store.level <- fillMarkDownZero(store.level)
-store.level <- add.normalized.col(store.level, 'MarkDown1')
-store.level <- add.normalized.col(store.level, 'MarkDown2')
-store.level <- add.normalized.col(store.level, 'MarkDown3')
-store.level <- add.normalized.col(store.level, 'MarkDown4')
-store.level <- add.normalized.col(store.level, 'MarkDown5')
->>>>>>> Stashed changes
 ```
 
 ### Setup
@@ -345,11 +317,13 @@ To allow us to make good comparisons between models, we use a consistent set of 
 ```{r formula}
 sales.formula <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
   IsHoliday*Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
-  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month +   Norm_MarkDown1 + Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month + Norm_MarkDown1 +
+  Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
 # version without interactions to be used for our decision tree model
 sales.formula.no.interactions <- Norm_Sales ~ Norm_Unemployment + Norm_CPI + Norm_Fuel_Price +
   IsHoliday + Store_Type + Norm_Temperature + Lag_1_Sales + Lag_2_Sales + Lag_3_Sales +
-  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month 
+  Lag_4_Sales + Lag_51_Sales + Lag_52_Sales + Lag_1_53_Diff + Month + Norm_MarkDown1 +
+  Norm_MarkDown2 + Norm_MarkDown3 + Norm_MarkDown4 + Norm_MarkDown5
 ```
 
 We define a convenience function for evaluating the model on the training and test sets:
